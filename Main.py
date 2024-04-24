@@ -4,24 +4,25 @@ import random
 
 import pygame
 
-from src.Button import Button
+from src.Button import Button, MapSelectorButton
 from src.Particle import Particle
-from src.key import Key
-from src.map_selector_button import MapSelectorButton
+from src.Key import Key
+from src.Slider import Slider
 
 
 class Game:
     #  0 -> 10 = easy -> hard
-    OD = 8
-    AR = 8
+    OD = 10
+    AR = 5
+    SS = 10
 
     SCREEN_WIDTH, SCREEN_HEIGHT = 1920, 1080
     FPS = 330
-    GAME_AREA = min(SCREEN_WIDTH, SCREEN_HEIGHT) / 2
+    GAME_AREA = min(SCREEN_WIDTH, SCREEN_HEIGHT) * (0.55 - 0.02 * SS)
     KEY_SIZE = GAME_AREA / 3
 
     KEY_COLOR = (255, 0, 0)
-    KEY_TIMER_DELAY = 750 - (50*AR)
+    KEY_TIMER_DELAY = 750 - (50 * AR)
 
     COUNTDOWN = 1500
 
@@ -74,7 +75,7 @@ class Game:
         pygame.draw.rect(self.pause_surface, (32, 32, 32), (rect_x, rect_y, rect_w, rect_h), border_radius=32)
         pygame.draw.rect(self.pause_surface, (48, 48, 48), (rect_x, rect_y, rect_w, rect_h), border_radius=32, width=8)
         self.pause_surface.blit(text, (
-        self.SCREEN_WIDTH / 2 - text.get_width() / 2, self.SCREEN_HEIGHT / 4 - text.get_height() / 2))
+            self.SCREEN_WIDTH / 2 - text.get_width() / 2, self.SCREEN_HEIGHT / 4 - text.get_height() / 2))
 
         self.fps = 0
         self.volume = 0.5
@@ -108,13 +109,22 @@ class Game:
             beat_maps = [file for file in os.listdir(map_pack_path) if file.endswith(".csv")]
             self.map_packs[map_pack_folder] = {"beat_maps": beat_maps}
 
-        self.resume_button = Button("Resume", (self.SCREEN_WIDTH / 2, self.SCREEN_HEIGHT / 2 - 120, 200, 50),
-                                    lambda: self.pause())
-        self.restart_button = Button("Retry", (self.SCREEN_WIDTH / 2, self.SCREEN_HEIGHT / 2, 200, 50),
+        self.resume_button = Button("Resume", (self.SCREEN_WIDTH / 2, self.SCREEN_HEIGHT / 2 - 120, 196, 64),
+                                    lambda: self.resume())
+        self.restart_button = Button("Retry", (self.SCREEN_WIDTH / 2, self.SCREEN_HEIGHT / 2, 196, 64),
                                      lambda: self.restart())
-        self.quit_button = Button("Quit", (self.SCREEN_WIDTH / 2, self.SCREEN_HEIGHT / 2 + 120, 200, 50),
+        self.abort_button = Button("Abort", (self.SCREEN_WIDTH / 2, self.SCREEN_HEIGHT / 2 + 120, 196, 64),
+                                   lambda: self.abort())
+        self.quit_button = Button("Quit Game", (self.SCREEN_WIDTH / 2, self.SCREEN_HEIGHT / 2 + 240, 196, 64),
                                   lambda: self.quit())
-        self.buttons = [self.resume_button, self.restart_button, self.quit_button]
+        self.OD_slider = Slider((self.SCREEN_WIDTH - 180, 128, 320, 24), 0, 10, default_value=self.OD,
+                                segments=10)
+        self.AR_slider = Slider((self.SCREEN_WIDTH - 180, 192, 320, 24), 0, 10, default_value=self.AR,
+                                segments=10)
+        self.SS_slider = Slider((self.SCREEN_WIDTH - 180, 256, 320, 24), 0, 10, default_value=self.SS,
+                                segments=10)
+        self.buttons = [self.resume_button, self.restart_button, self.abort_button, self.quit_button,
+                        self.OD_slider, self.AR_slider, self.SS_slider]
 
         self.show_beat_map_list = False
 
@@ -142,11 +152,19 @@ class Game:
 
         self.launch_time = 0
         self.countdown_time = 0
+        self.progress_percentage = 0
 
-        self.beat_map_timer_running = False
         self.beat_map_current_index = 0
         self.beat_map_start_time = 0
         self.beat_map_timer = 0
+
+        self.total_pause_time = 0
+        self.last_pause_time = 0
+
+        self.miss = 0
+        self.bad = 0
+        self.good = 0
+        self.perfect = 0
 
         self.combo = 0
         self.score = 0
@@ -155,7 +173,6 @@ class Game:
 
         self.key_appeared = 0
         self.key_pressed = 0
-        self.key_missed = 0
 
     def load_beat_map(self, csv_file):
         beat_map_data = {"time": []}
@@ -179,7 +196,7 @@ class Game:
         for beat_map in beat_maps:
             button_text = beat_map.split(".")[0]  # Display the beatmap name without the file extension
             button_rect = (
-            self.SCREEN_WIDTH / 1.2, self.SCREEN_HEIGHT / 8 + (len(self.beat_map_buttons) - 1) * 64, 540, 48)
+                self.SCREEN_WIDTH / 1.2, self.SCREEN_HEIGHT / 8 + (len(self.beat_map_buttons) - 1) * 64, 540, 48)
             button_function = lambda map_name=beat_map: self.load_beat_map_and_music(pack, map_name)
             new_button = Button(button_text, button_rect, button_function)
             self.beat_map_buttons.append(new_button)
@@ -204,10 +221,15 @@ class Game:
 
         self.beat_map_data = self.load_beat_map(f"{self.map_path}{self.map_pack}/{self.beat_map}")
         self.end_time = self.beat_map_data["time"][-1]
-        self.restart()
+        self.button_selection_beat_map_start()
 
     def back_into_map_pack_list(self):
         self.show_beat_map_list = False
+
+    def button_selection_beat_map_start(self):
+        if self.game_state == "wait":
+            self.countdown_time = pygame.time.get_ticks()
+            self.game_state = "start-countdown"
 
     def run(self):
         while self.running:
@@ -228,9 +250,12 @@ class Game:
                 self.running = False
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE:
-                    if self.is_pause and pygame.key.get_mods() & pygame.KMOD_LSHIFT:
-                        self.running = False
-                    self.pause()
+                    if pygame.key.get_mods() & pygame.KMOD_LSHIFT:
+                        self.quit()
+                    if self.is_pause:
+                        self.resume()
+                    else:
+                        self.pause()
                 elif event.key == pygame.K_F3:
                     self.debug = not self.debug
                 elif event.key == pygame.K_SPACE:
@@ -245,42 +270,66 @@ class Game:
                     self.adjust_music_volume(-0.1)
 
     def pause(self):
-        self.is_pause = not self.is_pause
-        self.menu_click.play()
-        if self.is_pause:
-            self.beat_map_timer_running = False
+        if not self.game_state == "start-countdown" and not self.game_state == "resume-countdown":
+            self.is_pause = True
+            self.menu_click.play()
+            self.last_pause_time = pygame.time.get_ticks()
             self.pause_music()
-        else:
-            self.countdown_time = pygame.time.get_ticks()
-            self.game_state = "resume-countdown"
+
+    def resume(self):
+        self.is_pause = False
+        self.menu_click.play()
+
+        self.countdown_time = pygame.time.get_ticks()
+        self.game_state = "resume-countdown"
 
     def start(self):
         self.launch_time = pygame.time.get_ticks()
-        self.beat_map_timer_running = True
-        self.beat_map_timer = 0
-
         self.beat_map_start_time = pygame.time.get_ticks()
+        self.beat_map_timer = 0
         self.stop_music()
-        self.game_state = "prepare_count"  # start map
+        self.game_state = "prepare_count"
 
     def stop(self):
         self.keys = []
-        self.trail = []
 
-        self.accuracy = 1
-        self.score = 0
+        self.launch_time = 0
+        self.countdown_time = pygame.time.get_ticks()
+        self.progress_percentage = 0
+
+        self.beat_map_current_index = 0
+        self.beat_map_start_time = 0
+        self.beat_map_timer = 0
+
+        self.total_pause_time = 0
+        self.last_pause_time = pygame.time.get_ticks()
+
+        self.miss = 0
+        self.bad = 0
+        self.good = 0
+        self.perfect = 0
+
         self.combo = 0
+        self.score = 0
+        self.note = 0
+        self.accuracy = 1
+
         self.key_appeared = 0
         self.key_pressed = 0
-        self.key_missed = 0
 
     def restart(self):
         self.stop()
-        self.start()
-        self.pause()
+        self.game_state = "start-countdown"
+        self.is_pause = False
+        self.menu_click.play()
 
     def quit(self):
         self.running = False
+
+    def abort(self):
+        self.stop()
+        self.game_state = "wait"
+        self.is_pause = False
 
     def adjust_music_volume(self, change, overwrite=False):
         if overwrite:
@@ -314,41 +363,48 @@ class Game:
             self.mouse_pos = pygame.mouse.get_pos()
             if self.game_state == "prepare_count":
                 if pygame.time.get_ticks() - self.launch_time >= self.KEY_TIMER_DELAY:
+                    self.total_pause_time = 0
+                    self.beat_map_start_time = pygame.time.get_ticks()
                     self.game_state = "playing"
             elif self.game_state == "playing":
                 self.start_music()
-                if self.is_pause:
-                    self.beat_map_start_time += self.clock.get_rawtime()*1.1
-                    self.pause_music()
-                else:
-                    self.beat_map_timer += self.clock.get_rawtime()
-                    if self.beat_map_timer > int((self.beat_map_data["time"][-1])) + self.KEY_TIMER_DELAY:
+                if not self.is_pause:
+                    self.beat_map_timer = pygame.time.get_ticks() - self.beat_map_start_time - self.total_pause_time
+                    if self.beat_map_timer > int((self.beat_map_data["time"][-1])) + self.KEY_TIMER_DELAY + 10 * (
+                            11 - self.OD):
                         self.game_state = "result"
             elif self.game_state == "resume-countdown":
                 self.show_countdown = True
                 if pygame.time.get_ticks() - self.countdown_time >= self.COUNTDOWN:
                     self.show_countdown = False
-                    self.beat_map_timer_running = True
+                    self.beat_map_start_time = pygame.time.get_ticks()
                     self.unpause_music()
+                    self.total_pause_time += pygame.time.get_ticks() - self.last_pause_time
                     self.game_state = "playing"
             elif self.game_state == "start-countdown":
                 self.show_countdown = True
                 if pygame.time.get_ticks() - self.countdown_time >= self.COUNTDOWN:
+                    self.total_pause_time = 0
+                    self.beat_map_start_time = pygame.time.get_ticks()
                     self.show_countdown = False
-                    self.beat_map_timer_running = True
                     self.unpause_music()
                     self.start()
             elif self.game_state == "result":
                 pass
 
         def calculate():
+            self.OD = self.OD_slider.get_value()
+            self.AR = self.AR_slider.get_value()
+            self.SS = self.SS_slider.get_value()
+
             self.progress_percentage = 0
             if self.beat_map_timer != 0:
                 self.progress_percentage = self.beat_map_timer / int((self.beat_map_data["time"][-1]))
 
-            total_keys_appeared = self.key_pressed + self.key_missed
+            total_keys_appeared = self.key_pressed + self.miss
             if total_keys_appeared != 0:
-                self.accuracy = round(self.key_pressed / total_keys_appeared, 4)
+                ponderate_key_valor = self.bad / 6 + self.good / 3 + self.perfect
+                self.accuracy = round(ponderate_key_valor / total_keys_appeared, 4)
 
             total_keys = len(self.beat_map_data["time"])
             if total_keys != 0:
@@ -366,14 +422,13 @@ class Game:
                 self.note = 4
 
         def generate_key_from_beat_map_data():
-            if self.beat_map_timer_running:
+            if self.game_state == "playing" and not self.is_pause:
                 if self.beat_map_current_index < len(self.beat_map_data["time"]):
                     current_note_time = self.beat_map_data["time"][self.beat_map_current_index]
                     if self.beat_map_timer >= current_note_time:
                         self.create_key()
                         self.beat_map_current_index += 1
-                else:
-                    self.beat_map_timer_running = False
+
 
         statement()
         calculate()
@@ -398,6 +453,16 @@ class Game:
         self.prev_key_position = (cx, cy)
         self.key_appeared += 1
 
+    def remove_key(self, key):
+        if key.accuracy == "bad":
+            self.bad += 1
+        elif key.accuracy == "good":
+            self.good += 1
+        elif key.accuracy == "perfect":
+            self.perfect += 1
+
+        self.keys.remove(key)
+
     def update_cursor_trail(self):
         if self.pause:
             mouse_pos = pygame.mouse.get_pos()
@@ -409,8 +474,8 @@ class Game:
     def draw(self, screen, mouse_pos):
         menu_1_width, menu_1_height = 256, 384
         menu_2_width, menu_2_height = 256, 384
-        menu_3_width, menu_3_height = 320, 96
-        menu_4_width = 640
+        menu_4_width, menu_4_height = 320, 96
+        menu_3_width = 640
 
         x_center, y_center = self.SCREEN_WIDTH / 2, self.SCREEN_HEIGHT / 2
         x_mouse, y_mouse = mouse_pos
@@ -418,7 +483,7 @@ class Game:
         x_offset, y_offset = (x_center - x_mouse) / 48, (y_center - y_mouse) / 48
 
         def draw_menu_1():
-            rect_x = self.SCREEN_WIDTH / 6 - menu_1_width / 2 - x_offset
+            rect_x = x_center - self.GAME_AREA * 1.1 - menu_1_width / 2 - x_offset
             rect_y = y_center - menu_1_height / 2 - y_offset
             pygame.draw.rect(screen, (24, 24, 24), (rect_x, rect_y, menu_1_width, menu_1_height), border_radius=16)
 
@@ -428,19 +493,19 @@ class Game:
                 rect_y + menu_1_height / 3 - image.get_height() / 2))
 
             combo_text = f"{self.combo}x"
-            text = self.font96.render(combo_text, True, "#dd5727" if self.combo == 0 else"#1f69ae")
+            text = self.font96.render(combo_text, True, "#dd5727" if self.combo == 0 else "#1f69ae")
             screen.blit(text, (
                 rect_x + menu_1_width / 2 - text.get_width() / 2,
                 rect_y + menu_1_height / 1.36 - text.get_height() / 2))
 
         def draw_menu_2():
-            rect_x = self.SCREEN_WIDTH / 1.2 - menu_2_width / 2 - x_offset
+            rect_x = x_center + self.GAME_AREA * 1.1 - menu_2_width / 2 - x_offset
             rect_y = y_center - menu_2_height / 2 - y_offset
             pygame.draw.rect(screen, (24, 24, 24), (rect_x, rect_y, menu_2_width, menu_2_height), border_radius=16)
 
             accuracy_text = f"{self.accuracy * 100:.2f}%"
-            notes_text = f"Notes {self.key_pressed}/{self.key_pressed + self.key_missed}"
-            miss_text = f"Miss {self.key_missed}"
+            notes_text = f"Notes {self.key_pressed}/{self.key_pressed + self.miss}"
+            miss_text = f"Miss {self.miss}"
 
             text = self.font64.render(accuracy_text, True, (16, 224, 32))
             screen.blit(text, (
@@ -456,35 +521,35 @@ class Game:
                 rect_y + menu_2_height / 1.36 - text.get_height() / 2))
 
         def draw_menu_3():
-            menu_x = x_center - menu_4_width / 2 - x_offset
-            menu_y = self.SCREEN_HEIGHT * 0.1 - y_offset
-            pygame.draw.rect(self.screen, (64, 64, 64), (menu_x - 4, menu_y, menu_4_width + 8, 24),
+            menu_x = x_center - menu_3_width / 2 - x_offset
+            menu_y = y_center - self.GAME_AREA * 0.75 - y_offset
+            pygame.draw.rect(self.screen, (64, 64, 64), (menu_x - 4, menu_y, menu_3_width + 8, 24),
                              border_radius=12)
             if self.beat_map_timer > 0:
                 pygame.draw.rect(self.screen, (16, 196, 16),
-                                 (menu_x, menu_y+4, menu_4_width * self.progress_percentage, 16),
+                                 (menu_x, menu_y + 4, menu_3_width * self.progress_percentage, 16),
                                  border_radius=6)
-            pygame.draw.rect(self.screen, (32, 32, 32), (menu_x - 4, menu_y, menu_4_width + 8, 24),
+            pygame.draw.rect(self.screen, (32, 32, 32), (menu_x - 4, menu_y, menu_3_width + 8, 24),
                              border_radius=12, width=4)
 
         def draw_menu_4():
-            rect_x = x_center - menu_3_width / 2 - x_offset
-            rect_y = self.SCREEN_HEIGHT * 0.9 - menu_3_height / 2 - y_offset
-            pygame.draw.rect(self.screen, (24, 24, 24), (rect_x, rect_y, menu_3_width, menu_3_height), border_radius=16)
+            rect_x = x_center - menu_4_width / 2 - x_offset
+            rect_y = y_center + self.GAME_AREA * 0.78 - menu_4_height / 2 - y_offset
+            pygame.draw.rect(self.screen, (24, 24, 24), (rect_x, rect_y, menu_4_width, menu_4_height), border_radius=16)
 
             score_str = str(self.score).zfill(7)
             text = self.font96.render(score_str, True, "#d68224")
-            text_x = x_center - menu_3_width / 2 - x_offset
-            text_y = self.SCREEN_HEIGHT * 0.9 - 24 - menu_3_height / 2 - y_offset
+            text_x = x_center - menu_4_width / 2 - x_offset
+            text_y = y_center + self.GAME_AREA * 0.78 - 24 - menu_4_height / 2 - y_offset
             screen.blit(text, (
-                text_x + menu_3_width / 2 - text.get_width() / 2,
-                text_y + menu_3_height / 1.36 - text.get_height() / 2))
+                text_x + menu_4_width / 2 - text.get_width() / 2,
+                text_y + menu_4_height / 1.36 - text.get_height() / 2))
 
         def draw_volume():
             for i in range(10):
                 volume = self.volume * 10
                 pygame.draw.rect(screen, (0, 255, 0) if i < volume else (32, 32, 32), (
-                    self.SCREEN_WIDTH / 1.2 - 80 + i * 16 - x_offset, y_center + 200 - y_offset, 12, 36),
+                    x_center + self.GAME_AREA * 1.1 - 80 + i * 16 - x_offset, y_center + 200 - y_offset, 12, 36),
                                  border_radius=4)
 
         def draw_map_delimitation():
@@ -528,13 +593,12 @@ class Game:
                 f"Pause: {self.is_pause} | Debug: {self.debug} | State: {self.game_state}",
                 f"Nb Notes Appeared / Nb Notes in Total: {self.key_appeared}/{len(self.beat_map_data["time"])} | Rank {self.note}",
                 f"Nb Entities [Keys]: {len(self.keys)} | [Trail]: {len(self.trail)}",
-                f"time: {int(pygame.time.get_ticks() / 1000)}s ({pygame.time.get_ticks()})",
-                f"Timer: {self.beat_map_timer_running}",
-                f"BeatMap advance: {self.beat_map_timer_running} - {self.beat_map_timer / 1000}/{int((self.beat_map_data["time"][-1])) / 1000} ({int(self.progress_percentage * 100)}%)",
+                f"time: {int(pygame.time.get_ticks() / 1000)}s ({pygame.time.get_ticks()}) (pause time:{self.total_pause_time})",
+                f"BeatMap advance: {self.beat_map_timer / 1000}/{int((self.beat_map_data["time"][-1])) / 1000} ({int(self.progress_percentage * 100)}%)",
                 f"",
                 f"-------------------[Player Status]-------------------",
                 f"Accuracy: {int(self.accuracy * 10000) / 100:.2f}% | Score: {self.score} | Combo: {self.combo}",
-                f"Keys: {self.key_pressed}HIT | {self.key_missed}MISS",
+                f"Keys: {self.key_pressed}HIT | {self.miss}MISS",
             ]
             for i, text in enumerate(texts):
                 rendered_text = self.font24.render(text, True, (255, 255, 255))
@@ -544,12 +608,17 @@ class Game:
             self.screen.blit(self.pause_surface, (0, 0))
             for button in self.buttons:
                 button.draw(self.screen)
+
+        def draw_selection_beat_maps():
             if not self.debug:
                 for button in self.map_pack_buttons:
                     button.draw(self.screen)
             if self.show_beat_map_list:
                 for button in self.beat_map_buttons:
                     button.draw(self.screen)
+
+        def draw_settings_menu():
+            pass
 
         def draw_countdown():
             text = self.font128.render(
@@ -561,19 +630,22 @@ class Game:
 
         self.draw_particles()
 
-        draw_map_delimitation()
-
-        for entity in self.keys:
-            entity.draw(self.screen)
+        if not self.game_state == "wait":
+            draw_map_delimitation()
+            for entity in self.keys:
+                entity.draw(self.screen)
 
         if self.is_pause:
             draw_pause_menu()
         else:
-            draw_menu_1()
-            draw_menu_2()
-            draw_menu_3()
-            draw_menu_4()
-            draw_volume()
+            if self.game_state == "wait":
+                draw_selection_beat_maps()
+            else:
+                draw_menu_1()
+                draw_menu_2()
+                draw_menu_3()
+                draw_menu_4()
+                draw_volume()
         if self.show_countdown and not self.is_pause:
             draw_countdown()
 
@@ -597,7 +669,6 @@ class Game:
             size = 24 - i * 0.5
             color = interpolate_color(self.TRAIL_COLOR_START, self.TRAIL_COLOR_END, i / self.TRAIL_LENGTH)
             pygame.draw.circle(self.screen, color, pos, int(size))
-
 
 
 if __name__ == "__main__":
