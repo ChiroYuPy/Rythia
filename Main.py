@@ -393,9 +393,12 @@ class Game:
                 pass
 
         def calculate():
+            print(self.OD, self.AR, self.SS)
             self.OD = self.OD_slider.get_value()
             self.AR = self.AR_slider.get_value()
             self.SS = self.SS_slider.get_value()
+            self.GAME_AREA = min(self.SCREEN_WIDTH, self.SCREEN_HEIGHT) * (0.55 - 0.02 * self.SS)
+            self.KEY_SIZE = self.GAME_AREA / 3
 
             self.progress_percentage = 0
             if self.beat_map_timer != 0:

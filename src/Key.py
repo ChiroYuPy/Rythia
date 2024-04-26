@@ -34,6 +34,7 @@ class Key:
         self.range_accuracy = 10 * (11 - self.game.OD)
 
     def update(self):
+        self.range_accuracy = 10 * (11 - self.game.OD)
         current_time = self.game.beat_map_timer
         if current_time - self.creation_time >= self.game.KEY_TIMER_DELAY + self.range_accuracy:
             self.status = "expired"
