@@ -10,10 +10,9 @@ Rythia est un jeu de rythme qui met à l'épreuve vos réflexes et votre précis
 ## 🎨 Fonctionnalités
 
 - 🎵 Gameplay dynamique basé sur la musique
-- 🎧 Support de plusieurs chansons personnalisées
-- 💡 Effets visuels et animations fluides avec *pygame*
+- 🎧 Support de map provenant d'osu!
+- 💡 Effets visuels et animations
 - 🎯 Système de score basé sur la précision
-- 🌐 Interface conviviale et intuitive
 
 ## ⚡ Installation
 
@@ -41,28 +40,9 @@ Rythia est un jeu de rythme qui met à l'épreuve vos réflexes et votre précis
 3. Suivez les notes qui apparaissent à l'écran et appuyez sur les touches correspondantes en rythme avec la musique.
 4. Obtenez le meilleur score possible !
 
-## 💼 Contribution
-
-Les contributions sont les bienvenues ! Pour contribuer :
-
-1. **Forkez** le projet.
-2. Créez une nouvelle branche :
-   ```bash
-   git checkout -b feature-nouvelle-fonctionnalite
-   ```
-3. Ajoutez vos modifications et faites un commit :
-   ```bash
-   git commit -m "Ajout d'une nouvelle fonctionnalité"
-   ```
-4. Poussez votre code sur votre fork et créez une **Pull Request**.
-
 ## 💎 Remerciements
 
-Un grand merci à tous les contributeurs et aux jeux comme *Sound Space* qui ont inspiré ce projet.
-
-## 💊 Licence
-
-Ce projet est sous licence MIT. Voir le fichier [LICENSE](LICENSE) pour plus de détails.
+Mercu à *Sound Space* qui à inspiré ce projet.
 
 ---
 
