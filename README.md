@@ -1,6 +1,6 @@
 # Rythia
 
-![Rythia Logo](https://via.placeholder.com/600x200?text=Rythia)  
+![RythiaGameplay](https://github.com/user-attachments/assets/6b5e9d1c-1584-4fff-a4b3-4dd99d2777b5)
 Un jeu de rythme inspiré de *Sound Space*, développé en Python avec *pygame*.
 
 ## 🎧 Description
